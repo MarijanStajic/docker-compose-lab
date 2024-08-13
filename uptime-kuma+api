@@ -1,0 +1,53 @@
+# .INFORMATION
+# Uptime-Kuma must be run and configured before setting up the API, and it is placed behind Traefik with an API using the Swagger interface. 
+# For the API, it is important to generate a token using the password defined in the environment variables and then use it under the "Authentication - /login/access-token" category. The default username is "admin". 
+# Then, at the top of the Swagger interface, you must authenticate with these credentials to be able to send requests.
+
+version: "3.8"
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    volumes:
+      - /docker/uptimekuma/data:/app/data
+    ports:
+      - 3001:3001
+    restart: unless-stopped
+    networks:
+      - traefik_traefik 
+    labels:
+      - traefik.http.routers.uptime-http.middlewares=redirect-to-https
+      - traefik.http.routers.uptime-secure.rule=Host(`domain.tld`)
+      - traefik.http.routers.uptime-secure.tls=true
+      - traefik.http.routers.uptime-secure.entrypoints=websecure
+      - traefik.http.routers.uptime-secure.middlewares=network
+      - traefik.http.services.uptime.loadbalancer.server.port=3001
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.network.ipallowlist.sourcerange=IP
+  uptime-kuma-api:
+    image: medaziz11/uptimekuma_restapi:latest
+    volumes:
+      - api:/db
+    restart: always
+    environment:
+      - KUMA_SERVER=http://localcontainerip:3001 # Set the local IP of the container
+      - KUMA_USERNAME=username # Set username of Uptime-Kuma that you have defined
+      - KUMA_PASSWORD=kumapassword # Set password of Uptime-Kuma that you have defined
+      - ADMIN_PASSWORD=kumaAPIpassword # Set a password for the API of Uptime-Kuma
+    ports:
+      - 8000:8000
+    networks:
+      - traefik_traefik
+    labels:
+      - traefik.http.routers.uptime-api-http.middlewares=redirect-to-https
+      - traefik.http.routers.uptime-api-secure.rule=Host(`domain.tld`)
+      - traefik.http.routers.uptime-api-secure.tls=true
+      - traefik.http.routers.uptime-api-secure.entrypoints=websecure
+      - traefik.http.routers.uptime-api-secure.middlewares=network
+      - traefik.http.services.uptime-api.loadbalancer.server.port=8000
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.network.ipallowlist.sourcerange=IP
+volumes:
+  api:
+networks:
+  traefik_traefik:
+    external: true
