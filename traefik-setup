@@ -1,0 +1,52 @@
+# .INFORMATION
+# For my Traefik setup, I configured an SSL certificate that is not managed with DNS Challenge or the Let's Encrypt method proposed by Traefik by default.
+# Let's Encrypt method proposed by Traefik by default. I generated the key and certificate using Certbot. Then, I created a file named "certificat-tls.yaml" where I point to my key. I mounted the volume to avoid using a DNS Challenge if the provider used is not recognized.
+# In the configuration below, port 80 is redirected to port 443, which is then verified by an IP allowlist and redirected to the correct port used by the service, using the defined domain name.
+
+version: "3.8"
+services:
+  traefik:
+    image: traefik:latest
+    command:
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --providers.docker=true
+      - --api.insecure=true
+      - --providers.file.directory=/etc/traefik/dynamic
+      # - --log.level=DEBUG
+    ports:
+      - 8080:8080
+      - 443:443
+      - 80:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # ./ prefix indicates that it will look in this same directory as the docker-compose.
+      - ./traefik_dynamic.yml:/etc/traefik/dynamic/conf.yml:ro
+    networks:
+      - traefik
+    labels:
+      # Redirect traffic from HTTP to HTTPS by setting up a middlewares
+      - traefik.http.routers.traefik-http.middlewares=redirect-to-https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      # Set the domain name (you must configure correctly the entry A on your DNS zone!) and the redirection to the port configured for the service
+      - traefik.http.routers.traefik-secure.rule=Host(`domain.tld`) # domain has to be set
+      - traefik.http.services.traefik.loadbalancer.server.port=8080
+      # Enable TLS and the entrypoint on 443
+      - traefik.http.routers.traefik-secure.tls=true
+      - traefik.http.routers.traefik-secure.entrypoints=websecure
+      # Configure a ipallowlist for a dedicated network
+      - traefik.http.routers.traefik-secure.middlewares=network # Name has to be set
+      - traefik.http.middlewares.network.ipallowlist.sourcerange=IP # Name has to be changed and IP has to be set
+networks:
+  traefik:
+    driver: bridge
+
+# .INFORMATION
+# The traefik_dynamic.yml configuration file must be created in a separate file and located in the same directory as the docker-compose. 
+# The files from Certbot are automatically generated in etc/letsencrypt/live/domain.tld/.
+
+tls:
+  certificates:
+    - certFile: /etc/letsencrypt/live/domain.tld/fullchain.pem
+      keyFile: /etc/letsencrypt/live/domain.tld/privkey.pem
